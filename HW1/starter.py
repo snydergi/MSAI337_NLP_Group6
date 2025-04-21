@@ -300,14 +300,24 @@ def train_model(model, opt):
     print("training model...")
     model.train()
 
+    loss_fn = F.cross_entropy()
+
     # write code to:
     #  1. create a nopeak mask
+    trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model), device=opt.device).bool()
     #  2. feed training data to the model in batches
-    #  3. send the indices of training tokens to the GPU
-    #  4. linearize the predictions and compute the loss against ground truth
-    #     (you can use F.cross_entropy or write your own code)
-    #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
-    #  6. report intermediate trainining perplexity
+    for batch, (X, y) in enumerate(opt.train):
+        #  3. send the indices of training tokens to the GPU
+        X, y = X.to(opt.device), y.to(opt.device)
+        #  4. linearize the predictions and compute the loss against ground truth
+        #     (you can use F.cross_entropy or write your own code)
+        pred = model(X, trg_mask)
+        loss = loss_fn(pred, y)
+        #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
+        loss.backward()
+        opt.optimizer.step()
+        #  6. report intermediate trainining perplexity
+        # print perplexity
     #  7. generate a test perplexity once per training epoch by calling test_model()
     #  8. save model weights to file specified in opt.savename
     #  SEE trainer.py for examples of each of the above
@@ -339,7 +349,7 @@ def main():
     parser.add_argument('-lr', type=int, default=0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
-    parser.add_argument('-savename', type=str)
+    parser.add_argument('-savename', type=str, default='model/model.pth')
     parser.add_argument('-loadname', type=str)
     parser.add_argument('-tied', type=int, default=1)
     parser.add_argument('-dir_name', type=str, default='model')
