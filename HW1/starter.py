@@ -326,7 +326,7 @@ def train_model(model, opt):
         #  4. linearize the predictions and compute the loss against ground truth
         #     (you can use F.cross_entropy or write your own code)
         pred = model(X, trg_mask)
-        loss = F.cross_entropy(pred, y)
+        loss = F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1))
         #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
         loss.backward()
         opt.optimizer.step()
