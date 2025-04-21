@@ -320,18 +320,26 @@ def train_model(model, opt):
     #  1. create a nopeak mask
     trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model, device=opt.device)).bool()
     #  2. feed training data to the model in batches
-    for batch, (X, y) in enumerate(opt.train):
-        #  3. send the indices of training tokens to the GPU
-        X, y = X.to(opt.device), y.to(opt.device)
-        #  4. linearize the predictions and compute the loss against ground truth
-        #     (you can use F.cross_entropy or write your own code)
-        pred = model(X, trg_mask)
-        loss = F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1))
-        #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
-        loss.backward()
-        opt.optimizer.step()
-        #  6. report intermediate trainining perplexity
-        # print perplexity
+    for i in range(opt.epochs):
+        for batch, (X, y) in enumerate(opt.train):
+            #  3. send the indices of training tokens to the GPU
+            X, y = X.to(opt.device), y.to(opt.device)
+            #  4. linearize the predictions and compute the loss against ground truth
+            #     (you can use F.cross_entropy or write your own code)
+            pred = model(X, trg_mask)
+            loss = F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1))
+            #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
+            loss.backward()
+            opt.optimizer.step()
+            #  6. report intermediate trainining perplexity
+            if batch % 100 == 0:
+                ppl = math.exp(loss.item())
+                print(f"Batch {batch}, Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}")
+            # print perplexity
+
+        print("Epoch, ", i, " Done")
+        test_model(model, opt, i)
+    print("Final Perplexity: ", math.exp(loss.item()))
     #  7. generate a test perplexity once per training epoch by calling test_model()
     #  8. save model weights to file specified in opt.savename
     #  SEE trainer.py for examples of each of the above
@@ -353,12 +361,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
-    parser.add_argument('-epochs', type=int, default=20)
+    parser.add_argument('-epochs', type=int, default=1)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8)
     parser.add_argument('-dropout', type=int, default=0.1)
-    parser.add_argument('-batchsize', type=int, default=1)
+    parser.add_argument('-batchsize', type=int, default=64)
     parser.add_argument('-printevery', type=int, default=100)
     parser.add_argument('-lr', type=int, default=0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
