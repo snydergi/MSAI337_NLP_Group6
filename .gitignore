@@ -2,3 +2,5 @@
 *.train.*
 *.valid.*
 NLPvenv/*
+saved/
+model.pth/

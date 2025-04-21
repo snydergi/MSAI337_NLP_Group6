@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 import torch.nn as nn
 from torch.autograd import Variable
+from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2TokenizerFast
 
 
@@ -242,7 +243,7 @@ class DecoderLayer(nn.Module):
         x2 = self.norm_1(x)
         x = x + self.dropout_1(self.attn_1(x2, x2, x2, trg_mask))
         x2 = self.norm_2(x)
-        x = x + self.dropout_3(self.ff(x2))
+        x = x + self.dropout_2(self.ff(x2))
         return x
 
 
@@ -276,6 +277,20 @@ class Transformer(nn.Module):
         return output
 
 
+class TokenDataset(Dataset):
+    def __init__(self, tokens, seq_len):
+        self.tokens = tokens
+        self.seq_len = seq_len
+
+    def __len__(self):
+        return len(self.tokens) - self.seq_len
+
+    def __getitem__(self, idx):
+        X = torch.tensor(self.tokens[idx : idx + self.seq_len])
+        y = torch.tensor(self.tokens[idx + 1 : idx + self.seq_len + 1])
+        return X, y
+
+
 def get_model(opt, trg_vocab):
 
     assert opt.d_model % opt.heads == 0
@@ -299,12 +314,11 @@ def train_model(model, opt):
 
     print("training model...")
     model.train()
-
-    loss_fn = F.cross_entropy()
-
+    dataset = TokenDataset(opt.train, opt.seqlen)  # or whatever length you want
+    opt.train = DataLoader(dataset, opt.batchsize, shuffle=True)
     # write code to:
     #  1. create a nopeak mask
-    trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model), device=opt.device).bool()
+    trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model, device=opt.device)).bool()
     #  2. feed training data to the model in batches
     for batch, (X, y) in enumerate(opt.train):
         #  3. send the indices of training tokens to the GPU
@@ -312,7 +326,7 @@ def train_model(model, opt):
         #  4. linearize the predictions and compute the loss against ground truth
         #     (you can use F.cross_entropy or write your own code)
         pred = model(X, trg_mask)
-        loss = loss_fn(pred, y)
+        loss = F.cross_entropy(pred, y)
         #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
         loss.backward()
         opt.optimizer.step()
@@ -349,7 +363,7 @@ def main():
     parser.add_argument('-lr', type=int, default=0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
-    parser.add_argument('-savename', type=str, default='model/model.pth')
+    parser.add_argument('-savename', type=str, default='model.pth')
     parser.add_argument('-loadname', type=str)
     parser.add_argument('-tied', type=int, default=1)
     parser.add_argument('-dir_name', type=str, default='model')
