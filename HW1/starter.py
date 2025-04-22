@@ -342,14 +342,26 @@ def train_model(model, opt):
     print("Final Perplexity: ", math.exp(loss.item()))
     #  7. generate a test perplexity once per training epoch by calling test_model()
     #  8. save model weights to file specified in opt.savename
+    torch.save(model.state_dict(), opt.savename)
     #  SEE trainer.py for examples of each of the above
 
 
 def test_model(model, opt, epoch):
     print("testing model...")
     model.eval()
-
     # write code to generate perplexity of test set
+    test_loss, correct = 0, 0
+    dataset = TokenDataset(opt.test, opt.seqlen)  # or whatever length you want
+    opt.test = DataLoader(dataset, opt.batchsize, shuffle=True)
+    with torch.no_grad():  # May not need this need to understand more
+        for X, y in opt.test:
+            X, y = X.to(opt.device), y.to(opt.device)
+            pred = model(X, None)  # Do we need mask for the test?
+            test_loss += F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1)).item()
+            correct += (pred.argmax(1) == y.view(-1)).sum().item()
+    test_loss /= len(opt.test)
+    correct /= len(opt.test.dataset)
+    print(f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n')
 
     model.train()
 
@@ -366,7 +378,7 @@ def main():
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8)
     parser.add_argument('-dropout', type=int, default=0.1)
-    parser.add_argument('-batchsize', type=int, default=64)
+    parser.add_argument('-batchsize', type=int, default=8)
     parser.add_argument('-printevery', type=int, default=100)
     parser.add_argument('-lr', type=int, default=0.00001)
     parser.add_argument('-seqlen', type=int, default=512)
