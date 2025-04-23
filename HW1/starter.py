@@ -300,7 +300,7 @@ def get_model(opt, trg_vocab):
     model.to(opt.device)
 
     if opt.loadname is not None:
-        print("loading pretrained weights...")
+        print("loading pretrained weights...", flush=True)
         model.load_state_dict(torch.load(opt.loadname))
     else:
         for p in model.parameters():
@@ -312,7 +312,7 @@ def get_model(opt, trg_vocab):
 
 def train_model(model, opt):
 
-    print("training model...")
+    print("training model...", flush=True)
     model.train()
     dataset = TokenDataset(opt.train, opt.seqlen)  # or whatever length you want
     opt.train = DataLoader(dataset, opt.batchsize, shuffle=True)
@@ -336,13 +336,14 @@ def train_model(model, opt):
             if batch % 100 == 0:
                 ppl = math.exp(loss.item())
                 print(
-                    f"Batch {batch}, Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}, Percent: {(batch/runTime)*100:.6f}"
+                    f"Batch {batch}, Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}, Percent: {(batch/runTime)*100:.6f}",
+                    flush=True,
                 )
             # print perplexity
 
-        print("Epoch, ", i, " Done")
+        print("Epoch, ", i, " Done", flush=True)
         test_model(model, opt, i)
-    print("Final Perplexity: ", math.exp(loss.item()))
+    print("Final Perplexity: ", math.exp(loss.item()), flush=True)
     #  7. generate a test perplexity once per training epoch by calling test_model()
     #  8. save model weights to file specified in opt.savename
     torch.save(model.state_dict(), opt.savename)
@@ -350,7 +351,7 @@ def train_model(model, opt):
 
 
 def test_model(model, opt, epoch):
-    print("testing model...")
+    print("testing model...", flush=True)
     model.eval()
     # write code to generate perplexity of test set
     test_loss, correct = 0, 0
@@ -364,7 +365,9 @@ def test_model(model, opt, epoch):
             correct += (pred.argmax(1) == y.view(-1)).sum().item()
     test_loss /= len(opt.test)
     correct /= len(opt.test.dataset)
-    print(f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n')
+    print(
+        f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n', flush=True
+    )
 
     model.train()
 
@@ -411,7 +414,7 @@ def main():
     shutil.copy(source_name, dir_name + source_name)
     opt.log_file = dir_name + "log_file.txt"
 
-    print(str(opt))
+    print(str(opt), flush=True)
 
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
     opt.train = read_corpus('wiki2.train.txt', tokenizer)
@@ -431,7 +434,7 @@ def main():
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     params = sum([np.prod(p.size()) for p in model_parameters])
     text = 'total params: %d' % (params)
-    print(text)
+    print(text, flush=True)
 
     opt.optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr, betas=(0.9, 0.98), eps=1e-9)
     if opt.SGDR == True:
