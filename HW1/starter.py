@@ -317,6 +317,7 @@ def train_model(model, opt):
     dataset = TokenDataset(opt.train, opt.seqlen)  # or whatever length you want
     opt.train = DataLoader(dataset, opt.batchsize, shuffle=True)
     runTime = len(opt.train)
+    savedPs = []
     # write code to:
     #  1. create a nopeak mask
     trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model, device=opt.device)).bool()
@@ -335,6 +336,9 @@ def train_model(model, opt):
             #  6. report intermediate trainining perplexity
             if batch % 100 == 0:
                 ppl = math.exp(loss.item())
+                savedPs.append(ppl)
+                with open('perps.pickle', 'wb') as file:
+                    pickle.dump(savedPs, file)
                 print(
                     f"Batch {batch}, Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}, Percent: {(batch/runTime)*100:.6f}",
                     flush=True,
@@ -386,7 +390,7 @@ def main():
     parser.add_argument('-dropout', type=int, default=0.1)
     parser.add_argument('-batchsize', type=int, default=8)
     parser.add_argument('-printevery', type=int, default=100)
-    parser.add_argument('-lr', type=int, default=0.001)
+    parser.add_argument('-lr', type=int, default=0.00005)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
     parser.add_argument('-savename', type=str, default='model.pth')
@@ -423,6 +427,7 @@ def main():
 
     obs = len(opt.train)
     opt.vocab_size = tokenizer.vocab_size
+    print('Vocab size: ', opt.vocab_size)
     temp = []
     for i in range(opt.vocab_size):
         temp.append(i)
