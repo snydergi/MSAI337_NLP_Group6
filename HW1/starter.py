@@ -424,34 +424,34 @@ def test_model(model, opt, epoch, tokenizer, mask):
     model.eval()
     total_loss = 0
     total_tokens = 0
-    
+
     with torch.no_grad():
         for batch, (input_batch, target_batch) in enumerate(
             data_generator(opt.test, opt.batchsize, opt.seqlen, opt.device, tokenizer)
         ):
             pred = model(input_batch, mask)
-            
+
             # Reshape for cross entropy
             # pred_flat = pred.reshape(opt.batchsize * opt.seqlen, -1)
             pred_flat = pred.view(-1, pred.size(-1))  # [batch_size * seq_len, vocab_size]
-            target_flat = target_batch.view(-1)       # [batch_size * seq_len]
+            target_flat = target_batch.view(-1)  # [batch_size * seq_len]
             # target_flat = target_batch.reshape(opt.batchsize * opt.seqlen)
-            
+
             # Calculate loss
             loss = F.cross_entropy(pred_flat, target_flat)
             total_loss += loss.item()
             total_tokens += len(target_flat)
-            
+
             # Calculate accuracy
             correct = (pred_flat.argmax(1) == target_flat).sum().item()
-            
+
     avg_loss = total_loss / (batch + 1)
     perplexity = math.exp(avg_loss)
     accuracy = correct / total_tokens
-    
+
     print(
-        f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * accuracy):>0.1f}%, Avg loss: {avg_loss:>8f}, Perplexity: {perplexity:>8f}\n', 
-        flush=True
+        f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * accuracy):>0.1f}%, Avg loss: {avg_loss:>8f}, Perplexity: {perplexity:>8f}\n',
+        flush=True,
     )
     model.train()
 
