@@ -16,6 +16,7 @@ from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2TokenizerFast
 
+savedTestPs = []
 
 def read_corpus(filename, tokenizer):
     seq = []
@@ -400,14 +401,14 @@ def train_model(model, opt, tokenizer):
             opt.optimizer.step()
             totalTokens += input_batch.numel() + target_batch.numel()
             if batch % 100 == 0:
-                ppl = math.exp(loss.item())
-                savedPs.append(ppl)
-                with open('perps.pickle', 'wb') as file:
-                    pickle.dump(savedPs, file)
                 print(
                     f"Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}",
                     flush=True,
                 )
+        ppl = math.exp(loss.item())
+        savedPs.append(ppl)
+        with open('perps.pickle', 'wb') as file:
+            pickle.dump(savedPs, file)
         test_model(model, opt, i, tokenizer, trg_mask)
         torch.save(model.state_dict(), f"{opt.savename}/epoch{i+1}.pth")
         print("Epoch", i + 1, " Done", flush=True)
@@ -424,7 +425,6 @@ def test_model(model, opt, epoch, tokenizer, mask):
     model.eval()
     total_loss = 0
     total_tokens = 0
-
     with torch.no_grad():
         for batch, (input_batch, target_batch) in enumerate(
             data_generator(opt.test, opt.batchsize, opt.seqlen, opt.device, tokenizer)
@@ -439,6 +439,7 @@ def test_model(model, opt, epoch, tokenizer, mask):
 
             # Calculate loss
             loss = F.cross_entropy(pred_flat, target_flat)
+            savedTestPs.append(math.exp(loss.item()))
             total_loss += loss.item()
             total_tokens += len(target_flat)
 
@@ -448,6 +449,9 @@ def test_model(model, opt, epoch, tokenizer, mask):
     avg_loss = total_loss / (batch + 1)
     perplexity = math.exp(avg_loss)
     accuracy = correct / total_tokens
+
+    with open('perpsTest.pickle', 'wb') as file:
+                    pickle.dump(savedTestPs, file)
 
     print(
         f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * accuracy):>0.1f}%, Avg loss: {avg_loss:>8f}, Perplexity: {perplexity:>8f}\n',
