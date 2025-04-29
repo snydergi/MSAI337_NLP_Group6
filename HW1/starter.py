@@ -82,6 +82,33 @@ class Norm(nn.Module):
         return norm
 
 
+def euclidean_distance(q, k):
+    """Calculates the Euclidean distance between query and key."""
+    return torch.sqrt(torch.sum((q.unsqueeze(-2) - k.unsqueeze(-3)) ** 2, dim=-1))
+
+
+def distance_based_attention(q, k, v, d_k, mask=None, dropout=None):
+    """Attention based on Euclidean distance."""
+    distances = euclidean_distance(q, k)  # Shape: (batch_size, num_heads, seq_len_q, seq_len_k)
+
+    # Convert distances to scores. Smaller distance means higher score.
+    # You might need to experiment with the scaling factor (-1/sqrt(d_k) is common)
+    scores = -distances / math.sqrt(d_k)  # Invert and scale
+
+    if mask is not None:
+        mask = mask.unsqueeze(1)
+        scores = scores.masked_fill(mask == 0, -1e9)
+
+    # Apply softmax to get attention weights
+    weights = F.softmax(scores, dim=-1)
+
+    if dropout is not None:
+        weights = dropout(weights)
+
+    output = torch.matmul(weights, v)
+    return output
+
+
 def attention(q, k, v, d_k, mask=None, dropout=None):
 
     scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(d_k)
@@ -362,6 +389,8 @@ def train_model(model, opt, tokenizer):
     savedPs = []
     trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model, device=opt.device)).bool()
     for i in range(opt.epochs):
+        startTime = time.time()
+        totalTokens = 0
         for batch, (input_batch, target_batch) in enumerate(
             data_generator(opt.train, opt.batchsize, opt.seqlen, opt.device, tokenizer)
         ):
@@ -369,6 +398,7 @@ def train_model(model, opt, tokenizer):
             loss = F.cross_entropy(pred.view(-1, opt.vocab_size), target_batch.view(-1))
             loss.backward()
             opt.optimizer.step()
+            totalTokens += input_batch.numel() + target_batch.numel()
             if batch % 100 == 0:
                 ppl = math.exp(loss.item())
                 savedPs.append(ppl)
@@ -380,7 +410,8 @@ def train_model(model, opt, tokenizer):
                 )
         test_model(model, opt, i, tokenizer, trg_mask)
         torch.save(model.state_dict(), f"{opt.savename}/epoch{i+1}.pth")
-        print("Epoch, ", i + 1, " Done", flush=True)
+        print("Epoch", i + 1, " Done", flush=True)
+        print("Rate: ", totalTokens / (time.time() - startTime), " TPS")
         # test_model(model, opt, i)
     print("Final Perplexity: ", math.exp(loss.item()), flush=True)
     #  7. generate a test perplexity once per training epoch by calling test_model()
