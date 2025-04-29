@@ -4,3 +4,4 @@
 NLPvenv/*
 saved/
 model.pth/
+*.pth
