@@ -277,18 +277,61 @@ class Transformer(nn.Module):
         return output
 
 
-class TokenDataset(Dataset):
-    def __init__(self, tokens, seq_len):
-        self.tokens = tokens
-        self.seq_len = seq_len
+# class TokenDataset(Dataset):
+#     def __init__(self, tokens, seq_len):
+#         self.tokens = tokens
+#         self.seq_len = seq_len
 
-    def __len__(self):
-        return len(self.tokens) - self.seq_len
+#     def __len__(self):
+#         return len(self.tokens) - self.seq_len
 
-    def __getitem__(self, idx):
-        X = torch.tensor(self.tokens[idx : idx + self.seq_len])
-        y = torch.tensor(self.tokens[idx + 1 : idx + self.seq_len + 1])
-        return X, y
+#     def __getitem__(self, idx):
+#         X = torch.tensor(self.tokens[idx : idx + self.seq_len])
+#         y = torch.tensor(self.tokens[idx + 1 : idx + self.seq_len + 1])
+#         return X, y
+
+
+def data_generator(data, batch_size, seq_len, device, tokenizer):
+    """Generates batches of data with padding.
+
+    Args:
+        data (list):  List of token IDs (output of read_corpus).
+        batch_size (int): The desired batch size.
+        seq_len (int):  Maximum sequence length.
+        tokenizer:   The tokenizer.
+
+    Yields:
+        torch.Tensor:  Padded batch of input sequences (shape: batch_size, seq_len).
+        torch.Tensor:  Padded batch of target sequences (shape: batch_size, seq_len).
+    """
+    for i in range(0, len(data) - seq_len, seq_len * batch_size):  # modified the loop
+        batch_data = data[i : i + seq_len * batch_size]
+
+        # Create input and target sequences
+        inputs = []
+        targets = []
+        for j in range(0, len(batch_data), seq_len):
+            inputs.append(batch_data[j : j + seq_len - 1])
+            targets.append(batch_data[j + 1 : j + seq_len])
+
+        # Pad sequences to seq_len
+        padded_inputs = []
+        padded_targets = []
+
+        for seq in inputs:
+            padding_len = seq_len - len(seq)
+            padded_seq = seq + [tokenizer.pad_token_id] * padding_len
+            padded_inputs.append(padded_seq)
+
+        for seq in targets:
+            padding_len = seq_len - len(seq)
+            padded_seq = seq + [tokenizer.pad_token_id] * padding_len
+            padded_targets.append(padded_seq)
+
+        input_tensor = torch.tensor(padded_inputs, dtype=torch.long).to(device)  # global opt
+        target_tensor = torch.tensor(padded_targets, dtype=torch.long).to(device)
+
+        yield input_tensor, target_tensor
 
 
 def get_model(opt, trg_vocab):
@@ -310,70 +353,61 @@ def get_model(opt, trg_vocab):
     return model
 
 
-def train_model(model, opt):
+def train_model(model, opt, tokenizer):
 
     print("training model...", flush=True)
     model.train()
-    dataset = TokenDataset(opt.train, opt.seqlen)  # or whatever length you want
-    opt.train = DataLoader(dataset, opt.batchsize, shuffle=True)
-    runTime = len(opt.train)
+    # dataset = TokenDataset(opt.train, opt.seqlen)  # or whatever length you want
+    # opt.train = DataLoader(dataset, opt.batchsize, shuffle=True)
     savedPs = []
-    # write code to:
-    #  1. create a nopeak mask
     trg_mask = torch.tril(torch.ones(1, opt.d_model, opt.d_model, device=opt.device)).bool()
-    #  2. feed training data to the model in batches
     for i in range(opt.epochs):
-        for batch, (X, y) in enumerate(opt.train):
-            #  3. send the indices of training tokens to the GPU
-            X, y = X.to(opt.device), y.to(opt.device)
-            #  4. linearize the predictions and compute the loss against ground truth
-            #     (you can use F.cross_entropy or write your own code)
-            pred = model(X, trg_mask)
-            loss = F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1))
-            #  5. calculate and apply the gradients with loss.backward() and optimizer.step()
+        for batch, (input_batch, target_batch) in enumerate(
+            data_generator(opt.train, opt.batchsize, opt.seqlen, opt.device, tokenizer)
+        ):
+            pred = model(input_batch, trg_mask)
+            loss = F.cross_entropy(pred.view(-1, opt.vocab_size), target_batch.view(-1))
             loss.backward()
             opt.optimizer.step()
-            #  6. report intermediate trainining perplexity
             if batch % 100 == 0:
                 ppl = math.exp(loss.item())
                 savedPs.append(ppl)
                 with open('perps.pickle', 'wb') as file:
                     pickle.dump(savedPs, file)
                 print(
-                    f"Batch {batch}, Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}, Percent: {(batch/runTime)*100:.6f}",
+                    f"Loss: {loss.item():.4f}, Perplexity: {ppl:.4f}",
                     flush=True,
                 )
-            # print perplexity
 
-        print("Epoch, ", i, " Done", flush=True)
-        test_model(model, opt, i)
+        torch.save(model.state_dict(), f"{opt.savename}/epoch{i+1}.pth")
+        print("Epoch, ", i + 1, " Done", flush=True)
+        # test_model(model, opt, i)
     print("Final Perplexity: ", math.exp(loss.item()), flush=True)
     #  7. generate a test perplexity once per training epoch by calling test_model()
     #  8. save model weights to file specified in opt.savename
-    torch.save(model.state_dict(), opt.savename)
     #  SEE trainer.py for examples of each of the above
 
 
-def test_model(model, opt, epoch):
-    print("testing model...", flush=True)
-    model.eval()
-    # write code to generate perplexity of test set
-    test_loss, correct = 0, 0
-    dataset = TokenDataset(opt.test, opt.seqlen)  # or whatever length you want
-    opt.test = DataLoader(dataset, opt.batchsize, shuffle=True)
-    with torch.no_grad():  # May not need this need to understand more
-        for X, y in opt.test:
-            X, y = X.to(opt.device), y.to(opt.device)
-            pred = model(X, None)  # Do we need mask for the test?
-            test_loss += F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1)).item()
-            correct += (pred.argmax(1) == y.view(-1)).sum().item()
-    test_loss /= len(opt.test)
-    correct /= len(opt.test.dataset)
-    print(
-        f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n', flush=True
-    )
+# def test_model(model, opt, epoch):
+#     print("testing model...", flush=True)
+#     model.eval()
+#     # write code to generate perplexity of test set
+#     test_loss, correct = 0, 0
+#     dataset = TokenDataset(opt.test, opt.seqlen)  # or whatever length you want
+#     opt.test = DataLoader(dataset, opt.batchsize, shuffle=True)
+#     with torch.no_grad():  # May not need this need to understand more
+#         for X, y in opt.test:
+#             X, y = X.to(opt.device), y.to(opt.device)
+#             pred = model(X, None)  # Do we need mask for the test?
+#             test_loss += F.cross_entropy(pred.view(-1, opt.vocab_size), y.view(-1)).item()
+#             correct += (pred.argmax(1) == y.view(-1)).sum().item()
+#     test_loss /= len(opt.test)
+#     correct /= len(opt.test.dataset)
+#     print(
+#         f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * correct):>0.1f}%, Avg loss: {test_loss:>8f} \n', flush=True
+#     )
 
-    model.train()
+#     model.train()
 
 
 def main():
@@ -383,17 +417,17 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
-    parser.add_argument('-epochs', type=int, default=1)
+    parser.add_argument('-epochs', type=int, default=20)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8)
     parser.add_argument('-dropout', type=int, default=0.1)
-    parser.add_argument('-batchsize', type=int, default=8)
+    parser.add_argument('-batchsize', type=int, default=32)
     parser.add_argument('-printevery', type=int, default=100)
     parser.add_argument('-lr', type=int, default=0.00005)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
-    parser.add_argument('-savename', type=str, default='model.pth')
+    parser.add_argument('-savename', type=str, default='modelWeights')
     parser.add_argument('-loadname', type=str)
     parser.add_argument('-tied', type=int, default=1)
     parser.add_argument('-dir_name', type=str, default='model')
@@ -421,11 +455,11 @@ def main():
     print(str(opt), flush=True)
 
     tokenizer = GPT2TokenizerFast.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
     opt.train = read_corpus('wiki2.train.txt', tokenizer)
     opt.valid = read_corpus('wiki2.valid.txt', tokenizer)
     opt.test = read_corpus('wiki2.test.txt', tokenizer)
 
-    obs = len(opt.train)
     opt.vocab_size = tokenizer.vocab_size
     print('Vocab size: ', opt.vocab_size)
     temp = []
@@ -453,8 +487,7 @@ def main():
     opt.src_pad = 0
     opt.trg_pad = 0
 
-    train_model(model, opt)
-    test_model(model, opt, -1)
+    train_model(model, opt, tokenizer)
 
 
 if __name__ == "__main__":
