@@ -18,6 +18,7 @@ from transformers import GPT2TokenizerFast
 
 savedTestPs = []
 
+
 def read_corpus(filename, tokenizer):
     seq = []
     with open(filename, 'rt') as f:
@@ -439,7 +440,6 @@ def test_model(model, opt, epoch, tokenizer, mask):
 
             # Calculate loss
             loss = F.cross_entropy(pred_flat, target_flat)
-            savedTestPs.append(math.exp(loss.item()))
             total_loss += loss.item()
             total_tokens += len(target_flat)
 
@@ -448,10 +448,11 @@ def test_model(model, opt, epoch, tokenizer, mask):
 
     avg_loss = total_loss / (batch + 1)
     perplexity = math.exp(avg_loss)
+    savedTestPs.append(perplexity)
     accuracy = correct / total_tokens
 
     with open('perpsTest.pickle', 'wb') as file:
-                    pickle.dump(savedTestPs, file)
+        pickle.dump(savedTestPs, file)
 
     print(
         f'Test Error for Epoch {epoch}: \n Accuracy: {(100 * accuracy):>0.1f}%, Avg loss: {avg_loss:>8f}, Perplexity: {perplexity:>8f}\n',
