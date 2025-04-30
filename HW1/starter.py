@@ -84,6 +84,7 @@ class Norm(nn.Module):
         return norm
 
 
+############################### Harrison Bounds ############################
 def euclidean_distance(q, k):
     """Calculates the Euclidean distance between query and key."""
     return torch.sqrt(torch.sum((q.unsqueeze(-2) - k.unsqueeze(-3)) ** 2, dim=-1))
@@ -109,6 +110,9 @@ def distance_based_attention(q, k, v, d_k, mask=None, dropout=None):
 
     output = torch.matmul(weights, v)
     return output
+
+
+############################### End_Citation  #############################
 
 
 def attention(q, k, v, d_k, mask=None, dropout=None):
@@ -306,20 +310,7 @@ class Transformer(nn.Module):
         return output
 
 
-# class TokenDataset(Dataset):
-#     def __init__(self, tokens, seq_len):
-#         self.tokens = tokens
-#         self.seq_len = seq_len
-
-#     def __len__(self):
-#         return len(self.tokens) - self.seq_len
-
-#     def __getitem__(self, idx):
-#         X = torch.tensor(self.tokens[idx : idx + self.seq_len])
-#         y = torch.tensor(self.tokens[idx + 1 : idx + self.seq_len + 1])
-#         return X, y
-
-
+############################### Harrison Bounds ############################
 def data_generator(data, batch_size, seq_len, device, tokenizer):
     """Generates batches of data with padding.
 
@@ -361,6 +352,9 @@ def data_generator(data, batch_size, seq_len, device, tokenizer):
         target_tensor = torch.tensor(padded_targets, dtype=torch.long).to(device)
 
         yield input_tensor, target_tensor
+
+
+############################### End_Citation  #############################
 
 
 def get_model(opt, trg_vocab):
@@ -414,11 +408,7 @@ def train_model(model, opt, tokenizer):
         torch.save(model.state_dict(), f"{opt.savename}/epoch{i+1}.pth")
         print("Epoch", i + 1, " Done", flush=True)
         print("Rate: ", totalTokens / (time.time() - startTime), " TPS")
-        # test_model(model, opt, i)
     print("Final Perplexity: ", math.exp(loss.item()), flush=True)
-    #  7. generate a test perplexity once per training epoch by calling test_model()
-    #  8. save model weights to file specified in opt.savename
-    #  SEE trainer.py for examples of each of the above
 
 
 def test_model(model, opt, epoch, tokenizer, mask):
@@ -475,7 +465,7 @@ def main():
     parser.add_argument('-dropout', type=int, default=0.1)
     parser.add_argument('-batchsize', type=int, default=32)
     parser.add_argument('-printevery', type=int, default=100)
-    parser.add_argument('-lr', type=int, default=0.00005)
+    parser.add_argument('-lr', type=int, default=0.00003)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
     parser.add_argument('-savename', type=str, default='modelWeights')
