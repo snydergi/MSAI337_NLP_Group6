@@ -18,7 +18,7 @@ def main():
     test = []
     valid = []
 
-    file_name = './train_complete.jsonl'
+    file_name = 'train_complete.jsonl'
     with open(file_name) as json_file:
         json_list = list(json_file)
     for i in range(len(json_list)):
