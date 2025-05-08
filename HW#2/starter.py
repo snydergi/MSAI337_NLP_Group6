@@ -9,38 +9,6 @@ answers = ['A', 'B', 'C', 'D']
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-class BertClassifier(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bert = BertModel.from_pretrained("bert-base-uncased")
-        self.dropout = nn.Dropout(0.1)
-        self.classifier = nn.Linear(768, 1)  # Single output for each choice
-
-    def forward(self, input_ids, attention_mask):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
-        pooled_output = outputs.last_hidden_state[:, 0, :]  # [CLS] token
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-        return logits.squeeze(-1)  # Remove last dimension
-
-
-def prepare_data(file_name):
-    data = []
-    with open(file_name) as json_file:
-        for line in json_file:
-            result = json.loads(line)
-            base = result['fact1'] + ' [SEP] ' + result['question']['stem']
-            ans = answers.index(result['answerKey'])
-
-            obs = []
-            for j in range(4):
-                text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
-                label = 1 if j == ans else 0
-                obs.append([text, label])
-            data.append(obs)
-    return data
-
-
 class BertDataset(Dataset):
     def __init__(self, data, tokenizer, max_len=128):
         self.data = data
@@ -60,17 +28,48 @@ class BertDataset(Dataset):
         )
 
         return {
-            'input_ids': encodings['input_ids'],  # shape: [4, max_len]
+            'input_ids': encodings['input_ids'],
             'attention_mask': encodings['attention_mask'],
-            'label': torch.tensor(labels.index(1)),  # index of correct answer (0-3)
+            'label': torch.tensor(labels.index(1)),
         }
+
+
+class BertClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bert = BertModel.from_pretrained("bert-base-uncased")
+        self.dropout = nn.Dropout(0.1)
+        self.classifier = nn.Linear(768, 1)
+
+    def forward(self, input_ids, attention_mask):
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        pooled_output = outputs.last_hidden_state[:, 0, :]  # [CLS] token
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+        return logits.squeeze(-1)
+
+
+def prepare_data(file_name):
+    data = []
+    with open(file_name) as json_file:
+        for line in json_file:
+            result = json.loads(line)
+            base = result['fact1'] + ' [SEP] ' + result['question']['stem']
+            ans = answers.index(result['answerKey'])
+
+            obs = []
+            for j in range(4):
+                text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
+                label = 1 if j == ans else 0
+                obs.append([text, label])
+            data.append(obs)
+    return data
 
 
 def train_model(model, dataloader, optimizer, criterion, epoch):
     model.train()
     total_loss = 0
     for batch in dataloader:
-        # Reshape inputs: [batch_size, num_choices, seq_len] -> [batch_size*num_choices, seq_len]
         input_ids = batch['input_ids'].view(-1, batch['input_ids'].size(-1)).to(device)
         attention_mask = batch['attention_mask'].view(-1, batch['attention_mask'].size(-1)).to(device)
         labels = batch['label'].to(device)
@@ -78,7 +77,6 @@ def train_model(model, dataloader, optimizer, criterion, epoch):
         optimizer.zero_grad()
         logits = model(input_ids, attention_mask)
 
-        # Reshape logits: [batch_size*num_choices] -> [batch_size, num_choices]
         logits = logits.view(-1, 4)
 
         loss = criterion(logits, labels)
