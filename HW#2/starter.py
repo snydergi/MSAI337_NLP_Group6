@@ -10,33 +10,24 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
 
-def train(model, dataloader, optimizer, device):
-    model.train()
-    total_loss = 0
-    correct = 0
-    total = 0
-    
-    return 
-
-
-def main():  
+def main():
     torch.manual_seed(0)
-    answers = ['A','B','C','D']
+    answers = ['A', 'B', 'C', 'D']
 
     train = []
     test = []
     valid = []
-    
-    file_name = 'train_complete.jsonl'        
+
+    file_name = './train_complete.jsonl'
     with open(file_name) as json_file:
         json_list = list(json_file)
     for i in range(len(json_list)):
         json_str = json_list[i]
         result = json.loads(json_str)
-        
+
         base = result['fact1'] + ' [SEP] ' + result['question']['stem']
         ans = answers.index(result['answerKey'])
-        
+
         obs = []
         for j in range(4):
             text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
@@ -44,31 +35,31 @@ def main():
                 label = 1
             else:
                 label = 0
-            obs.append([text,label])
+            obs.append([text, label])
         train.append(obs)
-        
+
         print(obs)
         print(' ')
-        
+
         print(result['question']['stem'])
-        print(' ',result['question']['choices'][0]['label'],result['question']['choices'][0]['text'])
-        print(' ',result['question']['choices'][1]['label'],result['question']['choices'][1]['text'])
-        print(' ',result['question']['choices'][2]['label'],result['question']['choices'][2]['text'])
-        print(' ',result['question']['choices'][3]['label'],result['question']['choices'][3]['text'])
-        print('  Fact: ',result['fact1'])
-        print('  Answer: ',result['answerKey'])
+        print(' ', result['question']['choices'][0]['label'], result['question']['choices'][0]['text'])
+        print(' ', result['question']['choices'][1]['label'], result['question']['choices'][1]['text'])
+        print(' ', result['question']['choices'][2]['label'], result['question']['choices'][2]['text'])
+        print(' ', result['question']['choices'][3]['label'], result['question']['choices'][3]['text'])
+        print('  Fact: ', result['fact1'])
+        print('  Answer: ', result['answerKey'])
         print('  ')
-                
-    file_name = 'dev_complete.jsonl'        
+
+    file_name = 'dev_complete.jsonl'
     with open(file_name) as json_file:
         json_list = list(json_file)
     for i in range(len(json_list)):
         json_str = json_list[i]
         result = json.loads(json_str)
-        
+
         base = result['fact1'] + ' [SEP] ' + result['question']['stem']
         ans = answers.index(result['answerKey'])
-        
+
         obs = []
         for j in range(4):
             text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
@@ -76,19 +67,19 @@ def main():
                 label = 1
             else:
                 label = 0
-            obs.append([text,label])
+            obs.append([text, label])
         valid.append(obs)
-        
-    file_name = 'test_complete.jsonl'        
+
+    file_name = 'test_complete.jsonl'
     with open(file_name) as json_file:
         json_list = list(json_file)
     for i in range(len(json_list)):
         json_str = json_list[i]
         result = json.loads(json_str)
-        
+
         base = result['fact1'] + ' [SEP] ' + result['question']['stem']
         ans = answers.index(result['answerKey'])
-        
+
         obs = []
         for j in range(4):
             text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
@@ -96,17 +87,18 @@ def main():
                 label = 1
             else:
                 label = 0
-            obs.append([text,label])
+            obs.append([text, label])
         test.append(obs)
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
     tokenizer.add_special_tokens = False  # Tokens added during dataset generation
     model = BertModel.from_pretrained("bert-base-uncased")
     optimizer = optim.Adam(model.parameters(), lr=3e-5)
-    linear = torch.rand(768,2)
-    
+    linear = torch.rand(768, 2)
+
+
 #    Add code to fine-tune and test your MCQA classifier.
-           
-                 
+
+
 if __name__ == "__main__":
     main()
