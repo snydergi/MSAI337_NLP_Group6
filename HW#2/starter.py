@@ -38,7 +38,7 @@ def prepare_data(file_name):
             data.append(obs)
     return data
 
-class MCQADataset(Dataset):
+class BertDataset(Dataset):
     def __init__(self, data, tokenizer, max_len=128):
         self.data = data
         self.tokenizer = tokenizer
@@ -114,9 +114,9 @@ def main():
     valid_data = prepare_data('dev_complete.jsonl')
     test_data = prepare_data('test_complete.jsonl')
 
-    train_dataset = MCQADataset(train_data, tokenizer)
-    valid_dataset = MCQADataset(valid_data, tokenizer)
-    test_dataset = MCQADataset(test_data, tokenizer)
+    train_dataset = BertDataset(train_data, tokenizer)
+    valid_dataset = BertDataset(valid_data, tokenizer)
+    test_dataset = BertDataset(test_data, tokenizer)
 
     train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True)
     valid_loader = DataLoader(valid_dataset, batch_size=8)
@@ -129,8 +129,11 @@ def main():
     # Train
     for epoch in range(3):
         train_model(model, train_loader, optimizer, criterion, epoch)
-        print("Validation:")
-        evaluate_model(model, valid_loader)
+        print("Test Accuracy:")
+        evaluate_model(model, test_loader)
+    
+    print("Validation Accuracy:")
+    evaluate_model(model, valid_loader)
 
 
 if __name__ == "__main__":
