@@ -7,6 +7,16 @@ import time
 import sys
 import json
 import numpy as np
+from torch.utils.data import Dataset, DataLoader
+
+
+def train(model, dataloader, optimizer, device):
+    model.train()
+    total_loss = 0
+    correct = 0
+    total = 0
+    
+    return 
 
 
 def main():  
@@ -29,7 +39,7 @@ def main():
         
         obs = []
         for j in range(4):
-            text = base + result['question']['choices'][j]['text'] + ' [SEP]'
+            text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
             if j == ans:
                 label = 1
             else:
@@ -61,7 +71,7 @@ def main():
         
         obs = []
         for j in range(4):
-            text = base + result['question']['choices'][j]['text'] + ' [SEP]'
+            text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
             if j == ans:
                 label = 1
             else:
@@ -81,7 +91,7 @@ def main():
         
         obs = []
         for j in range(4):
-            text = base + result['question']['choices'][j]['text'] + ' [SEP]'
+            text = f"[CLS]{base} {result['question']['choices'][j]['text']}[END]"
             if j == ans:
                 label = 1
             else:
@@ -90,6 +100,7 @@ def main():
         test.append(obs)
 
     tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    tokenizer.add_special_tokens = False  # Tokens added during dataset generation
     model = BertModel.from_pretrained("bert-base-uncased")
     optimizer = optim.Adam(model.parameters(), lr=3e-5)
     linear = torch.rand(768,2)
