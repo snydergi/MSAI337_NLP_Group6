@@ -8,19 +8,46 @@ import torch.nn as nn
 answers = ['A', 'B', 'C', 'D']
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+
+class BertDataset(Dataset):
+    def __init__(self, data, tokenizer, max_len=128):
+        self.data = data
+        self.tokenizer = tokenizer
+        self.max_len = max_len
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        instance = self.data[idx]
+        texts = [item[0] for item in instance]
+        labels = [item[1] for item in instance]
+
+        encodings = self.tokenizer(
+            texts, padding='max_length', truncation=True, max_length=self.max_len, return_tensors="pt"
+        )
+
+        return {
+            'input_ids': encodings['input_ids'],
+            'attention_mask': encodings['attention_mask'],
+            'label': torch.tensor(labels.index(1)),
+        }
+
+
 class BertClassifier(nn.Module):
     def __init__(self):
         super().__init__()
         self.bert = BertModel.from_pretrained("bert-base-uncased")
         self.dropout = nn.Dropout(0.1)
-        self.classifier = nn.Linear(768, 1)  # Single output for each choice
-        
+        self.classifier = nn.Linear(768, 1)
+
     def forward(self, input_ids, attention_mask):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
         pooled_output = outputs.last_hidden_state[:, 0, :]  # [CLS] token
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
-        return logits.squeeze(-1)  # Remove last dimension
+        return logits.squeeze(-1)
+
 
 def prepare_data(file_name):
     data = []
@@ -38,51 +65,26 @@ def prepare_data(file_name):
             data.append(obs)
     return data
 
-class BertDataset(Dataset):
-    def __init__(self, data, tokenizer, max_len=128):
-        self.data = data
-        self.tokenizer = tokenizer
-        self.max_len = max_len
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        instance = self.data[idx]
-        texts = [item[0] for item in instance]
-        labels = [item[1] for item in instance]
-
-        encodings = self.tokenizer(
-            texts, padding='max_length', truncation=True, 
-            max_length=self.max_len, return_tensors="pt"
-        )
-
-        return {
-            'input_ids': encodings['input_ids'],  # shape: [4, max_len]
-            'attention_mask': encodings['attention_mask'],
-            'label': torch.tensor(labels.index(1)),  # index of correct answer (0-3)
-        }
 
 def train_model(model, dataloader, optimizer, criterion, epoch):
     model.train()
     total_loss = 0
     for batch in dataloader:
-        # Reshape inputs: [batch_size, num_choices, seq_len] -> [batch_size*num_choices, seq_len]
         input_ids = batch['input_ids'].view(-1, batch['input_ids'].size(-1)).to(device)
         attention_mask = batch['attention_mask'].view(-1, batch['attention_mask'].size(-1)).to(device)
         labels = batch['label'].to(device)
 
         optimizer.zero_grad()
         logits = model(input_ids, attention_mask)
-        
-        # Reshape logits: [batch_size*num_choices] -> [batch_size, num_choices]
+
         logits = logits.view(-1, 4)
-        
+
         loss = criterion(logits, labels)
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
     print(f"Epoch {epoch} - Loss: {total_loss/len(dataloader):.4f}")
+
 
 def evaluate_model(model, dataloader):
     model.eval()
@@ -95,13 +97,14 @@ def evaluate_model(model, dataloader):
 
             logits = model(input_ids, attention_mask)
             logits = logits.view(-1, 4)
-            
+
             preds = torch.argmax(logits, dim=1)
             correct += (preds == labels).sum().item()
             total += labels.size(0)
     accuracy = correct / total
     print(f"Accuracy: {accuracy:.4f}")
     return accuracy
+
 
 def main():
     torch.manual_seed(0)
@@ -127,11 +130,17 @@ def main():
     criterion = nn.CrossEntropyLoss()
 
     # Train
+    print("Pre Train test")
+    evaluate_model(model, test_loader)
+
+    print("Pre train valid")
+    evaluate_model(model, valid_loader)
+
     for epoch in range(3):
         train_model(model, train_loader, optimizer, criterion, epoch)
         print("Test Accuracy:")
         evaluate_model(model, test_loader)
-    
+
     print("Validation Accuracy:")
     evaluate_model(model, valid_loader)
 
