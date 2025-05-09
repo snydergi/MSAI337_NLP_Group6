@@ -345,12 +345,12 @@ class QADataset(Dataset):
     def __getitem__(self, idx):
         example = self.examples[idx]
         prompt = (
-            f"[START] {example['fact1']} [SEP] {example['question']['stem']} "
-            f"[A] {example['question']['choices'][0]['text']} "
-            f"[B] {example['question']['choices'][1]['text']} "
-            f"[C] {example['question']['choices'][2]['text']} "
-            f"[D] {example['question']['choices'][3]['text']} "
-            f"[ANSWER] {example['answerKey']}"
+            f"[START] {example['fact1']} [SEP] {example['question']['stem']}"
+            f" [A] {example['question']['choices'][0]['text']}"
+            f" [B] {example['question']['choices'][1]['text']}"
+            f" [C] {example['question']['choices'][2]['text']}"
+            f" [D] {example['question']['choices'][3]['text']}"
+            f" [ANSWER][{example['answerKey']}]"
         )
         tokenized = self.tokenizer(
             prompt, max_length=self.max_length, padding="max_length", truncation=True, return_tensors="pt"
@@ -407,7 +407,7 @@ def train_model(model, opt, tokenizer, train_loader, test_loader):
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
     answer_token_id = tokenizer.convert_tokens_to_ids("[ANSWER]")
-
+    savedPs = []
     for epoch in range(opt.epochs):
         total_loss = 0
         for batch_idx, (input_ids, attention_mask) in enumerate(train_loader):
@@ -434,7 +434,12 @@ def train_model(model, opt, tokenizer, train_loader, test_loader):
 
             total_loss += loss.item()
 
-        print(f"Epoch {epoch}, Loss: {total_loss / len(train_loader)}")
+        ppl = math.exp(loss.item())
+        savedPs.append(ppl)
+        with open('perps.pickle', 'wb') as file:
+            pickle.dump(savedPs, file)
+
+        print(f"Epoch {epoch}, Perplexity: {math.exp(loss.item())}")
 
         test_model(model, opt, tokenizer, test_loader)
 
@@ -515,7 +520,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
-    parser.add_argument('-epochs', type=int, default=10)
+    parser.add_argument('-epochs', type=int, default=20)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8)
