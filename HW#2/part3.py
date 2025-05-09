@@ -17,6 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2TokenizerFast
 from evaluate import load
 
+
 class Embedder(nn.Module):
     def __init__(self, vocab_size, d_model):
         super().__init__()
@@ -460,75 +461,57 @@ def test_model(model, opt, tokenizer, test_loader):
     with torch.no_grad():
         for input_ids, attention_mask in test_loader:
             input_ids = input_ids.to(opt.device)
-
-            true_answer_ids = []
-
-            for i in range(input_ids.size(0)):
-                answer_pos = (input_ids[i] == answer_token_id).nonzero(as_tuple=True)
-                if len(answer_pos[0]) == 0:
-                    true_answer_ids.append(None)
-                    continue
-                ans_idx = answer_pos[0].item() + 1  # token after [ANSWER]
-                if ans_idx < input_ids.size(1):
-                    true_answer_ids.append(input_ids[i, ans_idx].item())  # Save the original answer token ID
-                    input_ids[i, ans_idx] = tokenizer.pad_token_id  # Overwrite with dummy token
-                else:
-                    true_answer_ids.append(None)
-
             attention_mask = attention_mask.to(opt.device)
-            outputs = model(input_ids, attention_mask)
 
-            # Get predictions for [ANSWER] positions
-            answer_positions = (input_ids == answer_token_id).nonzero(as_tuple=False)
+            # Process each batch item
+            for batch_idx in range(input_ids.size(0)):
+                answer_pos = (input_ids[batch_idx] == answer_token_id).nonzero(as_tuple=True)
 
-            for pos in answer_positions:
-                batch_idx, token_idx = pos
-                pred_logits = outputs[batch_idx, token_idx + 1]
-                top_k = torch.topk(pred_logits, k=4)
-                top_ids = top_k.indices.tolist()
-                top_scores = top_k.values.tolist()
+                ans_idx = answer_pos[0].item() + 1  # token right after [ANSWER]
+                input_ids[batch_idx, ans_idx] = tokenizer.pad_token_id  # Overwrite with padding token
 
-                print("\nTop 4 predicted tokens and scores after [ANSWER]:")
-                for i in range(4):
-                    token = tokenizer.decode([top_ids[i]])
-                    print(f"{i+1}. Token: '{token}', ID: {top_ids[i]}, Logit: {top_scores[i]:.4f}")
+                # Generate answer tokens after [ANSWER] using model.generate
+                # Make sure the model generates tokens after the [ANSWER] token
+                generated_ids = model.generate(
+                    input_ids=input_ids[batch_idx].unsqueeze(0),  # Batch size 1
+                    attention_mask=attention_mask[batch_idx].unsqueeze(0),  # Batch size 1
+                    max_length=input_ids.size(1) + 50,  # Max length including the context and generated answer
+                    num_return_sequences=1,  # Generate only one sequence per input
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,  # Stop generation on EOS token
+                )
 
-                # Still get the most likely token
-                pred_id = top_ids[0]
-                true_id = true_answer_ids[batch_idx]
+                # Decode the generated sequence (skip special tokens)
+                generated_text = tokenizer.decode(generated_ids[0], skip_special_tokens=False)
 
-                # Decode tokens to strings
+                # Extract the true answer from the original input (after [ANSWER])
+                true_answer_ids = input_ids[batch_idx, ans_idx:].tolist()  # True answer after [ANSWER]
+                true_answer_text = tokenizer.decode(true_answer_ids, skip_special_tokens=False)
+
+                # Decode context (before [ANSWER])
                 context_ids = input_ids[batch_idx].tolist()
-                trim_idx = len(context_ids)
-                while trim_idx > 0 and context_ids[trim_idx - 1] in tokenizer.all_special_ids:
-                    trim_idx -= 1
-                trimmed_ids = context_ids[:trim_idx]
-                context_text = tokenizer.decode(trimmed_ids, skip_special_tokens=False)
-                pred_token = tokenizer.decode([pred_id])
-                true_token = tokenizer.decode([true_id])
+                context_text = tokenizer.decode(context_ids, skip_special_tokens=False)
 
-                predictions.append(pred_token.strip())
-                references.append(true_token.strip())
-
+                # Print context and generated answer
                 print(f"\nContext: {context_text}")
-                print(f"Predicted token after [ANSWER]: {pred_token}")
-                print(f"Actual token after [ANSWER]: {true_token}")
+                print(f"Generated answer after [ANSWER]: {generated_text}")
+                print(f"Actual answer after [ANSWER]: {true_answer_text}")
 
-                if pred_id == true_id:
+                # Check if the generated answer matches the true answer
+                if generated_text.strip() == true_answer_text.strip():
                     correct += 1
                 total += 1
-        
-    results_bleu = bleu.compute(predictions=predictions, references=[[ref] for ref in references])
-    results_rouge = rouge.compute(predictions=predictions, references=references)
-    results_bertscore = bertscore.compute(predictions=predictions, references=references, lang="en")
 
-    print("\nEvaluation Metrics:")
-    print(f"BLEU Score: {results_bleu['bleu']:.4f}")
-    print(f"ROUGE-L Score: {results_rouge['rougeL']:.4f}")
-    print(f"BERTScore F1: {results_bertscore['f1'][0]:.4f}")
+    # results_bleu = bleu.compute(predictions=predictions, references=[[ref] for ref in references])
+    # results_rouge = rouge.compute(predictions=predictions, references=references)
+    # results_bertscore = bertscore.compute(predictions=predictions, references=references, lang="en")
+
+    # print("\nEvaluation Metrics:")
+    # print(f"BLEU Score: {results_bleu['bleu']:.4f}")
+    # print(f"ROUGE-L Score: {results_rouge['rougeL']:.4f}")
+    # print(f"BERTScore F1: {results_bertscore['f1'][0]:.4f}")
 
     print(f"Accuracy: {correct / total:.4f}")
-
     model.train()
 
 
