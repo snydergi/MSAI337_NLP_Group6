@@ -16,19 +16,6 @@ from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2TokenizerFast
 
-savedTestPs = []
-
-
-def read_qa_data(filename, tokenizer):
-    data = []
-    with open(filename) as f:
-        for line in f:
-            example = json.loads(line)
-            prompt = format_qa(example)
-            tokenized = tokenizer(prompt, return_tensors="pt")
-            data.append(tokenized["input_ids"].squeeze(0))
-    return data
-
 
 class Embedder(nn.Module):
     def __init__(self, vocab_size, d_model):
@@ -452,28 +439,6 @@ def train_model(model, opt, tokenizer, train_loader, test_loader):
         test_model(model, opt, tokenizer, test_loader)
 
 
-def generate_answer(model, prompt, tokenizer):
-    input_ids = tokenizer(prompt, return_tensors="pt").to(opt.device)
-
-    # Generate only 1 token after [ANSWER]
-    output = model.generate(
-        input_ids,
-        max_new_tokens=1,
-        pad_token_id=tokenizer.eos_token_id,
-        do_sample=False,
-        # Constrain to A/B/C/D
-        forced_token_ids=[
-            [
-                tokenizer.convert_tokens_to_ids("[A]"),
-                tokenizer.convert_tokens_to_ids("[B]"),
-                tokenizer.convert_tokens_to_ids("[C]"),
-                tokenizer.convert_tokens_to_ids("[D]"),
-            ]
-        ],
-    )
-    return tokenizer.decode(output[0][-1])
-
-
 def test_model(model, opt, tokenizer, test_loader):
     model.eval()
     answer_token_id = tokenizer.convert_tokens_to_ids("[ANSWER]")
@@ -483,6 +448,21 @@ def test_model(model, opt, tokenizer, test_loader):
     with torch.no_grad():
         for input_ids, attention_mask in test_loader:
             input_ids = input_ids.to(opt.device)
+
+            true_answer_ids = []
+
+            for i in range(input_ids.size(0)):
+                answer_pos = (input_ids[i] == answer_token_id).nonzero(as_tuple=True)
+                if len(answer_pos[0]) == 0:
+                    true_answer_ids.append(None)
+                    continue
+                ans_idx = answer_pos[0].item() + 1  # token after [ANSWER]
+                if ans_idx < input_ids.size(1):
+                    true_answer_ids.append(input_ids[i, ans_idx].item())  # Save the original answer token ID
+                    input_ids[i, ans_idx] = tokenizer.pad_token_id  # Overwrite with dummy token
+                else:
+                    true_answer_ids.append(None)
+
             attention_mask = attention_mask.to(opt.device)
             outputs = model(input_ids, attention_mask)
 
@@ -491,9 +471,19 @@ def test_model(model, opt, tokenizer, test_loader):
 
             for pos in answer_positions:
                 batch_idx, token_idx = pos
-                pred_logits = outputs[batch_idx, token_idx]
-                pred_id = pred_logits.argmax().item()
-                true_id = input_ids[batch_idx, token_idx + 1].item()
+                pred_logits = outputs[batch_idx, token_idx + 1]
+                top_k = torch.topk(pred_logits, k=4)
+                top_ids = top_k.indices.tolist()
+                top_scores = top_k.values.tolist()
+
+                print("\nTop 4 predicted tokens and scores after [ANSWER]:")
+                for i in range(4):
+                    token = tokenizer.decode([top_ids[i]])
+                    print(f"{i+1}. Token: '{token}', ID: {top_ids[i]}, Logit: {top_scores[i]:.4f}")
+
+                # Still get the most likely token
+                pred_id = top_ids[0]
+                true_id = true_answer_ids[batch_idx]
 
                 # Decode tokens to strings
                 context_ids = input_ids[batch_idx].tolist()
@@ -518,20 +508,6 @@ def test_model(model, opt, tokenizer, test_loader):
     model.train()
 
 
-def format_qa(qa):
-    fact = qa["fact1"]
-    stem = qa["question"]["stem"]
-    choices = [c["text"] for c in qa["question"]["choices"]]
-    answer = qa["answerKey"]
-
-    prompt = (
-        f"[START] {fact} [SEP] {stem} "
-        f"[A] {choices[0]} [B] {choices[1]} [C] {choices[2]} [D] {choices[3]} "
-        f"[ANSWER] {answer}"
-    )
-    return prompt
-
-
 def main():
 
     random.seed(10)
@@ -539,7 +515,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-no_cuda', action='store_true')
     parser.add_argument('-SGDR', action='store_true')
-    parser.add_argument('-epochs', type=int, default=3)
+    parser.add_argument('-epochs', type=int, default=10)
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8)
@@ -619,7 +595,7 @@ def main():
 
     train_model(model, opt, tokenizer, train_loader, test_loader)
 
-    test_model(model, opt, tokenizer, test_loader)
+    test_model(model, opt, tokenizer, valid_loader)
 
 
 if __name__ == "__main__":
