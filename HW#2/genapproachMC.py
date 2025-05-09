@@ -306,43 +306,43 @@ class Transformer(nn.Module):
     def forward(self, trg, trg_mask):
         x = self.decoder(trg, trg_mask)
         return self.out(x)
-    
+
     def generate(self, input_ids, max_new_tokens, **kwargs):
         for _ in range(max_new_tokens):
             # Forward pass
             outputs = self(input_ids, trg_mask=None)  # Assuming no mask for generation
             next_token_logits = outputs[:, -1, :]
-            
+
             # Apply constraints if provided
             if 'forced_token_ids' in kwargs:
                 forced_tokens = kwargs['forced_token_ids'][0]
                 mask = torch.ones_like(next_token_logits) * -1e9
                 mask[:, forced_tokens] = 0
                 next_token_logits += mask
-            
+
             next_token = next_token_logits.argmax(dim=-1, keepdim=True)
             input_ids = torch.cat([input_ids, next_token], dim=-1)
         return input_ids
-    
+
     def resize_token_embeddings(self, new_num_tokens):
         old_embeddings = self.decoder.embed.embed
         new_embeddings = nn.Embedding(new_num_tokens, self.d_model)
-        
+
         # Copy old embeddings
-        new_embeddings.weight.data[:old_embeddings.num_embeddings] = old_embeddings.weight.data
-        
+        new_embeddings.weight.data[: old_embeddings.num_embeddings] = old_embeddings.weight.data
+
         # Initialize new embeddings
         if new_num_tokens > old_embeddings.num_embeddings:
-            new_embeddings.weight.data[old_embeddings.num_embeddings:] = old_embeddings.weight.data.mean(dim=0)
-        
+            new_embeddings.weight.data[old_embeddings.num_embeddings :] = old_embeddings.weight.data.mean(dim=0)
+
         self.decoder.embed.embed = new_embeddings
         self.out = nn.Linear(self.d_model, new_num_tokens)
-        
+
         # Copy old output weights
         with torch.no_grad():
-            self.out.weight[:old_embeddings.num_embeddings] = self.out.weight[:old_embeddings.num_embeddings]
+            self.out.weight[: old_embeddings.num_embeddings] = self.out.weight[: old_embeddings.num_embeddings]
             if hasattr(self.out, 'bias'):
-                self.out.bias[:old_embeddings.num_embeddings] = self.out.bias[:old_embeddings.num_embeddings]
+                self.out.bias[: old_embeddings.num_embeddings] = self.out.bias[: old_embeddings.num_embeddings]
 
 
 class QADataset(Dataset):
@@ -366,11 +366,7 @@ class QADataset(Dataset):
             f"[ANSWER] {example['answerKey']}"
         )
         tokenized = self.tokenizer(
-            prompt,
-            max_length=self.max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
+            prompt, max_length=self.max_length, padding="max_length", truncation=True, return_tensors="pt"
         )
         return tokenized["input_ids"].squeeze(0), tokenized["attention_mask"].squeeze(0)
 
@@ -386,30 +382,31 @@ def get_model(opt, vocab_size):
         print("loading pretrained weights...", flush=True)
         pretrained_dict = torch.load(opt.loadname)
         model_dict = model.state_dict()
-        
+
         # 1. Load all weights except those needing size adjustment
-        pretrained_dict = {k: v for k, v in pretrained_dict.items() 
-                         if k in model_dict and v.size() == model_dict[k].size()}
+        pretrained_dict = {
+            k: v for k, v in pretrained_dict.items() if k in model_dict and v.size() == model_dict[k].size()
+        }
         model_dict.update(pretrained_dict)
-        
+
         # 2. Handle embedding layer
         if 'decoder.embed.embed.weight' in pretrained_dict:
             model_dict['decoder.embed.embed.weight'][:50257] = pretrained_dict['decoder.embed.embed.weight']
             # Initialize new tokens with mean of existing embeddings
             model_dict['decoder.embed.embed.weight'][50257:] = pretrained_dict['decoder.embed.embed.weight'].mean(dim=0)
-        
+
         # 3. Handle output layer
         if 'out.weight' in pretrained_dict:
             model_dict['out.weight'][:50257] = pretrained_dict['out.weight']
             model_dict['out.weight'][50257:] = pretrained_dict['out.weight'].mean(dim=0)
-        
+
         if 'out.bias' in pretrained_dict:
             model_dict['out.bias'][:50257] = pretrained_dict['out.bias']
             model_dict['out.bias'][50257:] = pretrained_dict['out.bias'].mean()
-        
+
         # 4. Load the modified state dict
         model.load_state_dict(model_dict, strict=False)
-        
+
         print("Successfully loaded pretrained weights with vocabulary expansion")
     else:
         for p in model.parameters():
@@ -440,7 +437,7 @@ def train_model(model, opt, tokenizer, train_loader, test_loader):
             answer_positions = (input_ids == answer_token_id).nonzero()[:, 1]
             loss = F.cross_entropy(
                 outputs[torch.arange(len(answer_positions)), answer_positions],
-                targets[torch.arange(len(answer_positions)), answer_positions + 1]
+                targets[torch.arange(len(answer_positions)), answer_positions + 1],
             )
 
             # Backward pass
@@ -457,7 +454,7 @@ def train_model(model, opt, tokenizer, train_loader, test_loader):
 
 def generate_answer(model, prompt, tokenizer):
     input_ids = tokenizer(prompt, return_tensors="pt").to(opt.device)
-    
+
     # Generate only 1 token after [ANSWER]
     output = model.generate(
         input_ids,
@@ -465,10 +462,14 @@ def generate_answer(model, prompt, tokenizer):
         pad_token_id=tokenizer.eos_token_id,
         do_sample=False,
         # Constrain to A/B/C/D
-        forced_token_ids=[[tokenizer.convert_tokens_to_ids("[A]"), 
-                          tokenizer.convert_tokens_to_ids("[B]"),
-                          tokenizer.convert_tokens_to_ids("[C]"),
-                          tokenizer.convert_tokens_to_ids("[D]")]]
+        forced_token_ids=[
+            [
+                tokenizer.convert_tokens_to_ids("[A]"),
+                tokenizer.convert_tokens_to_ids("[B]"),
+                tokenizer.convert_tokens_to_ids("[C]"),
+                tokenizer.convert_tokens_to_ids("[D]"),
+            ]
+        ],
     )
     return tokenizer.decode(output[0][-1])
 
@@ -486,15 +487,34 @@ def test_model(model, opt, tokenizer, test_loader):
             outputs = model(input_ids, attention_mask)
 
             # Get predictions for [ANSWER] positions
-            answer_positions = (input_ids == answer_token_id).nonzero()[:, 1]
-            preds = outputs[torch.arange(len(answer_positions)), answer_positions].argmax(dim=-1)
-            labels = input_ids[torch.arange(len(answer_positions)), answer_positions + 1]
+            answer_positions = (input_ids == answer_token_id).nonzero(as_tuple=False)
 
-            correct += (preds == labels).sum().item()
-            total += len(labels)
+            for pos in answer_positions:
+                batch_idx, token_idx = pos
+                pred_logits = outputs[batch_idx, token_idx]
+                pred_id = pred_logits.argmax().item()
+                true_id = input_ids[batch_idx, token_idx + 1].item()
+
+                # Decode tokens to strings
+                context_ids = input_ids[batch_idx].tolist()
+                trim_idx = len(context_ids)
+                while trim_idx > 0 and context_ids[trim_idx - 1] in tokenizer.all_special_ids:
+                    trim_idx -= 1
+                trimmed_ids = context_ids[:trim_idx]
+                context_text = tokenizer.decode(trimmed_ids, skip_special_tokens=False)
+                pred_token = tokenizer.decode([pred_id])
+                true_token = tokenizer.decode([true_id])
+
+                print(f"\nContext: {context_text}")
+                print(f"Predicted token after [ANSWER]: {pred_token}")
+                print(f"Actual token after [ANSWER]: {true_token}")
+
+                if pred_id == true_id:
+                    correct += 1
+                total += 1
 
     print(f"Accuracy: {correct / total:.4f}")
-    
+
     model.train()
 
 
@@ -523,14 +543,14 @@ def main():
     parser.add_argument('-d_model', type=int, default=512)
     parser.add_argument('-n_layers', type=int, default=6)
     parser.add_argument('-heads', type=int, default=8)
-    parser.add_argument('-dropout', type=int, default=0.1)
+    parser.add_argument('-dropout', type=float, default=0.1)
     parser.add_argument('-batchsize', type=int, default=8)
     parser.add_argument('-printevery', type=int, default=100)
     parser.add_argument('-lr', type=int, default=0.000005)
     parser.add_argument('-seqlen', type=int, default=512)
     parser.add_argument('-threshold', type=int, default=3)
     parser.add_argument('-savename', type=str, default='modelWeights')
-    parser.add_argument('-loadname', type=str, default='/home/gis/Documents/MSAI337_NLP_Group6/modelWeights_103/epoch20.pth')
+    parser.add_argument('-loadname', type=str, default='./epoch20.pth')
     parser.add_argument('-tied', type=int, default=1)
     parser.add_argument('-dir_name', type=str, default='model')
     parser.add_argument('-norm', type=float, default=2.0)
@@ -600,6 +620,7 @@ def main():
     train_model(model, opt, tokenizer, train_loader, test_loader)
 
     test_model(model, opt, tokenizer, test_loader)
+
 
 if __name__ == "__main__":
     main()
