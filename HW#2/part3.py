@@ -15,7 +15,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2TokenizerFast
-
+from evaluate import load
 
 class Embedder(nn.Module):
     def __init__(self, vocab_size, d_model):
@@ -450,6 +450,13 @@ def test_model(model, opt, tokenizer, test_loader):
     correct = 0
     total = 0
 
+    bleu = load("bleu")
+    rouge = load("rouge")
+    bertscore = load("bertscore")
+
+    predictions = []
+    references = []
+
     with torch.no_grad():
         for input_ids, attention_mask in test_loader:
             input_ids = input_ids.to(opt.device)
@@ -500,6 +507,9 @@ def test_model(model, opt, tokenizer, test_loader):
                 pred_token = tokenizer.decode([pred_id])
                 true_token = tokenizer.decode([true_id])
 
+                predictions.append(pred_token.strip())
+                references.append(true_token.strip())
+
                 print(f"\nContext: {context_text}")
                 print(f"Predicted token after [ANSWER]: {pred_token}")
                 print(f"Actual token after [ANSWER]: {true_token}")
@@ -507,6 +517,15 @@ def test_model(model, opt, tokenizer, test_loader):
                 if pred_id == true_id:
                     correct += 1
                 total += 1
+        
+    results_bleu = bleu.compute(predictions=predictions, references=[[ref] for ref in references])
+    results_rouge = rouge.compute(predictions=predictions, references=references)
+    results_bertscore = bertscore.compute(predictions=predictions, references=references, lang="en")
+
+    print("\nEvaluation Metrics:")
+    print(f"BLEU Score: {results_bleu['bleu']:.4f}")
+    print(f"ROUGE-L Score: {results_rouge['rougeL']:.4f}")
+    print(f"BERTScore F1: {results_bertscore['f1'][0]:.4f}")
 
     print(f"Accuracy: {correct / total:.4f}")
 
