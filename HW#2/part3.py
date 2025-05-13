@@ -15,6 +15,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 from transformers import GPT2TokenizerFast
+
 from evaluate import load
 
 
@@ -448,6 +449,11 @@ def train_model(model, opt, tokenizer, train_loader, test_loader):
 def test_model(model, opt, tokenizer, test_loader):
     model.eval()
     answer_token_id = tokenizer.convert_tokens_to_ids("[ANSWER]")
+    aToken = tokenizer.convert_tokens_to_ids("[A]")
+    bToken = tokenizer.convert_tokens_to_ids("[B]")
+    cToken = tokenizer.convert_tokens_to_ids("[C]")
+    dToken = tokenizer.convert_tokens_to_ids("[D]")
+    answerEnds = [answer_token_id, aToken, bToken, cToken, dToken]
     correct = 0
     total = 0
 
@@ -468,28 +474,41 @@ def test_model(model, opt, tokenizer, test_loader):
                 answer_pos = (input_ids[batch_idx] == answer_token_id).nonzero(as_tuple=True)
 
                 ans_idx = answer_pos[0].item() + 1  # token right after [ANSWER]
+                savedAnswer = input_ids[batch_idx, ans_idx].clone()
                 input_ids[batch_idx, ans_idx] = tokenizer.pad_token_id  # Overwrite with padding token
 
                 # Generate answer tokens after [ANSWER] using model.generate
                 # Make sure the model generates tokens after the [ANSWER] token
+                prompt = input_ids[batch_idx, 0 : ans_idx + 1]
                 generated_ids = model.generate(
-                    input_ids=input_ids[batch_idx].unsqueeze(0),  # Batch size 1
-                    attention_mask=attention_mask[batch_idx].unsqueeze(0),  # Batch size 1
-                    max_length=input_ids.size(1) + 50,  # Max length including the context and generated answer
-                    num_return_sequences=1,  # Generate only one sequence per input
+                    input_ids=prompt.unsqueeze(0),  # Add batch dimension
+                    attention_mask=attention_mask[batch_idx].unsqueeze(0),
+                    max_new_tokens=10,
+                    num_return_sequences=1,
                     pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id,  # Stop generation on EOS token
+                    eos_token_id=tokenizer.eos_token_id,
                 )
 
+                # Slice off the prompt length to get only the newly generated tokens
+                new_tokens = generated_ids[0, prompt.shape[0] :]
+
                 # Decode the generated sequence (skip special tokens)
-                generated_text = tokenizer.decode(generated_ids[0], skip_special_tokens=False)
+                generated_text = tokenizer.decode(new_tokens, skip_special_tokens=False)
 
                 # Extract the true answer from the original input (after [ANSWER])
-                true_answer_ids = input_ids[batch_idx, ans_idx:].tolist()  # True answer after [ANSWER]
-                true_answer_text = tokenizer.decode(true_answer_ids, skip_special_tokens=False)
+                answerList = []
+                found = False
+                for token in input_ids[batch_idx, 0:ans_idx]:
+                    if token == savedAnswer:
+                        found = True
+                    if found:
+                        if token in answerEnds and token != savedAnswer:
+                            break
+                        answerList.append(token)
+                true_answer_text = tokenizer.decode(answerList, skip_special_tokens=False)
 
                 # Decode context (before [ANSWER])
-                context_ids = input_ids[batch_idx].tolist()
+                context_ids = input_ids[batch_idx, 0:ans_idx].tolist()
                 context_text = tokenizer.decode(context_ids, skip_special_tokens=False)
 
                 # Print context and generated answer
@@ -502,14 +521,17 @@ def test_model(model, opt, tokenizer, test_loader):
                     correct += 1
                 total += 1
 
-    # results_bleu = bleu.compute(predictions=predictions, references=[[ref] for ref in references])
-    # results_rouge = rouge.compute(predictions=predictions, references=references)
-    # results_bertscore = bertscore.compute(predictions=predictions, references=references, lang="en")
+                predictions.append(generated_text)
+                references.append(true_answer_text)
 
-    # print("\nEvaluation Metrics:")
-    # print(f"BLEU Score: {results_bleu['bleu']:.4f}")
-    # print(f"ROUGE-L Score: {results_rouge['rougeL']:.4f}")
-    # print(f"BERTScore F1: {results_bertscore['f1'][0]:.4f}")
+    results_bleu = bleu.compute(predictions=predictions, references=references)
+    results_rouge = rouge.compute(predictions=predictions, references=references)
+    results_bertscore = bertscore.compute(predictions=predictions, references=references, lang="en")
+
+    print("\nEvaluation Metrics:")
+    print(f"BLEU Score: {results_bleu['bleu']:.4f}")
+    print(f"ROUGE-L Score: {results_rouge['rougeL']:.4f}")
+    print(f"BERTScore F1: {results_bertscore['f1'][0]:.4f}")
 
     print(f"Accuracy: {correct / total:.4f}")
     model.train()
