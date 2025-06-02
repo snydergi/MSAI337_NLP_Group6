@@ -1,0 +1,4 @@
+Basic - Pre: 0.26 Test: 0.64 Valid: 0.66
+Adaptor - Pre: 0.22 Test: 0.44 Valid: 0.46
+Lora - Pre: 0.26 Test: 0.50 Valid: 0.51
+Prefix - Pre: 0.26 Test: 0.33 Valid: 0.36
