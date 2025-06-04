@@ -4,6 +4,8 @@ import torch
 import json
 from torch.utils.data import Dataset, DataLoader
 import torch.nn as nn
+import time
+from datetime import timedelta
 
 answers = ['A', 'B', 'C', 'D']
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -76,6 +78,7 @@ def prepare_data(file_name):
 def train_model(model, dataloader, optimizer, criterion, epoch):
     model.train()
     total_loss = 0
+    start_time = time.time()
     for batch in dataloader:
         input_ids = batch['input_ids'].view(-1, batch['input_ids'].size(-1)).to(device)
         attention_mask = batch['attention_mask'].view(-1, batch['attention_mask'].size(-1)).to(device)
@@ -90,12 +93,15 @@ def train_model(model, dataloader, optimizer, criterion, epoch):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-    print(f"Epoch {epoch} - Loss: {total_loss/len(dataloader):.4f}")
+    epoch_time = time.time() - start_time
+    print(f"Epoch {epoch} - Loss: {total_loss/len(dataloader):.4f} - Time: {timedelta(seconds=epoch_time)}")
+    return epoch_time
 
 
 def evaluate_model(model, dataloader):
     model.eval()
     total, correct = 0, 0
+    start_time = time.time()
     with torch.no_grad():
         for batch in dataloader:
             input_ids = batch['input_ids'].view(-1, batch['input_ids'].size(-1)).to(device)
@@ -108,9 +114,12 @@ def evaluate_model(model, dataloader):
             preds = torch.argmax(logits, dim=1)
             correct += (preds == labels).sum().item()
             total += labels.size(0)
+    inference_time = time.time() - start_time
     accuracy = correct / total
+    avg_inference_time = inference_time / len(dataloader)
     print(f"Accuracy: {accuracy:.4f}")
-    return accuracy
+    print(f'Inference Time: {timedelta(seconds=inference_time)} - Avg per batch: {avg_inference_time:.4f} seconds')
+    return accuracy, inference_time
 
 
 def main():
@@ -145,14 +154,18 @@ def main():
     print("Pre train valid")
     evaluate_model(model, valid_loader)
 
+    total_train_time = 0
     for epoch in range(3):
-        train_model(model, train_loader, optimizer, criterion, epoch)
+        epoch_time = train_model(model, train_loader, optimizer, criterion, epoch)
+        total_train_time += epoch_time
         print("Test Accuracy:")
-        evaluate_model(model, test_loader)
+        test_acc, test_time = evaluate_model(model, test_loader)
 
     print("Validation Accuracy:")
-    evaluate_model(model, valid_loader)
-
+    valid_acc, valid_time = evaluate_model(model, valid_loader)
+    print(f"Total Training Time: {timedelta(seconds=total_train_time)}")
+    print(f'Test Time: {timedelta(seconds=test_time)}')
+    print(f'Validation Time: {timedelta(seconds=valid_time)}')
 
 if __name__ == "__main__":
     main()

@@ -8,3 +8,5 @@ model.pth/
 *.pickle
 models/
 *.zip
+*.odt
+*.odt#
